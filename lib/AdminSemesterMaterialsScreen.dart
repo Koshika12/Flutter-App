@@ -1,31 +1,6 @@
-import 'package:file_picker/file_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-
-/// A single uploaded file entry, shown under its category.
-class _UploadedFile {
-  final String name;
-  final String sizeLabel;
-  final DateTime uploadedAt;
-
-  _UploadedFile({
-    required this.name,
-    required this.sizeLabel,
-    required this.uploadedAt,
-  });
-}
-
-/// One required material category for a semester, e.g. "Notes", "Syllabus".
-class _MaterialCategory {
-  final String title;
-  final IconData icon;
-  final List<_UploadedFile> files;
-
-  _MaterialCategory({
-    required this.title,
-    required this.icon,
-    List<_UploadedFile>? files,
-  }) : files = files ?? [];
-}
+import 'package:url_launcher/url_launcher.dart';
 
 class AdminSemesterMaterialsScreen extends StatefulWidget {
   final int semester;
@@ -39,92 +14,147 @@ class AdminSemesterMaterialsScreen extends StatefulWidget {
 
 class _AdminSemesterMaterialsScreenState
     extends State<AdminSemesterMaterialsScreen> {
-  bool _isLoading = true;
-  bool _isUploading = false;
+  final List<Map<String, dynamic>> _categories = [
+    {"title": "Syllabus", "icon": Icons.description_rounded},
+    {"title": "Lecture Notes", "icon": Icons.edit_note_rounded},
+    {"title": "Slides / PPT", "icon": Icons.slideshow_rounded},
+    {"title": "Assignments", "icon": Icons.assignment_rounded},
+    {"title": "Previous Question Papers", "icon": Icons.quiz_rounded},
+  ];
 
-  // TODO: Replace with the real category list + existing files fetched
-  // from your backend (Firestore/Storage, REST API, etc.) for this semester.
-  late List<_MaterialCategory> _categories;
+  final CollectionReference materialsRef =
+      FirebaseFirestore.instance.collection('materials');
 
-  @override
-  void initState() {
-    super.initState();
-    _loadMaterials();
-  }
+  void _showAddMaterialSheet(String category) {
+    final titleCtrl = TextEditingController();
+    final linkCtrl = TextEditingController();
 
-  Future<void> _loadMaterials() async {
-    setState(() => _isLoading = true);
-
-    // TODO: Fetch real data for widget.semester here.
-    await Future.delayed(const Duration(milliseconds: 400));
-
-    _categories = [
-      _MaterialCategory(title: "Syllabus", icon: Icons.description_rounded),
-      _MaterialCategory(title: "Lecture Notes", icon: Icons.edit_note_rounded),
-      _MaterialCategory(title: "Slides / PPT", icon: Icons.slideshow_rounded),
-      _MaterialCategory(
-        title: "Assignments",
-        icon: Icons.assignment_rounded,
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      _MaterialCategory(
-        title: "Previous Question Papers",
-        icon: Icons.quiz_rounded,
-      ),
-    ];
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 22,
+            right: 22,
+            top: 22,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 22,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Add to $category",
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 18),
+              const Text("Title", style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: titleCtrl,
+                decoration: InputDecoration(
+                  hintText: "e.g. Unit 1 Notes",
+                  filled: true,
+                  fillColor: const Color(0xFFF5F7FB),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text("Google Drive Link", style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: linkCtrl,
+                decoration: InputDecoration(
+                  hintText: "https://drive.google.com/...",
+                  filled: true,
+                  fillColor: const Color(0xFFF5F7FB),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1B1F3B),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () async {
+                    final title = titleCtrl.text.trim();
+                    final link = linkCtrl.text.trim();
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-  }
+                    if (title.isEmpty || link.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Please fill both fields")),
+                      );
+                      return;
+                    }
+                    if (!link.startsWith("http")) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Please paste a valid link")),
+                      );
+                      return;
+                    }
 
-  Future<void> _uploadToCategory(_MaterialCategory category) async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'zip'],
-        withData: false,
-      );
-
-      if (result == null || result.files.isEmpty) return;
-
-      final picked = result.files.single;
-
-      setState(() => _isUploading = true);
-
-      // TODO: Upload `picked.path` (or `picked.bytes` on web) to your
-      // backend/storage here, tagged with widget.semester and
-      // category.title. Once that succeeds, refresh from the server
-      // instead of just appending locally below.
-      await Future.delayed(const Duration(seconds: 1));
-
-      final sizeInKb = (picked.size / 1024).toStringAsFixed(0);
-
-      setState(() {
-        category.files.add(
-          _UploadedFile(
-            name: picked.name,
-            sizeLabel: "$sizeInKb KB",
-            uploadedAt: DateTime.now(),
+                    try {
+                      await materialsRef.add({
+                        'title': title,
+                        'category': category,
+                        'semester': widget.semester,
+                        'driveLink': link,
+                        'uploadedAt': FieldValue.serverTimestamp(),
+                      });
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(content: Text("Failed to save. Try again.")),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text(
+                    "Add Material",
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+              ),
+            ],
           ),
         );
-        _isUploading = false;
-      });
+      },
+    );
+  }
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Uploaded "${picked.name}"')),
-      );
+  Future<void> _deleteMaterial(String docId) async {
+    try {
+      await materialsRef.doc(docId).delete();
     } catch (e) {
-      setState(() => _isUploading = false);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Upload failed. Please try again.")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to delete. Try again.")),
+        );
+      }
     }
   }
 
-  void _removeFile(_MaterialCategory category, _UploadedFile file) {
-    // TODO: Also delete from backend/storage here.
-    setState(() => category.files.remove(file));
+  Future<void> _openLink(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri != null && await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Could not open link")),
+        );
+      }
+    }
   }
 
   @override
@@ -136,172 +166,119 @@ class _AdminSemesterMaterialsScreenState
         backgroundColor: const Color(0xFF1B1F3B),
         foregroundColor: Colors.white,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Stack(
-              children: [
-                ListView.separated(
-                  padding: const EdgeInsets.all(20),
-                  itemCount: _categories.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 14),
-                  itemBuilder: (context, index) {
-                    return _CategoryCard(
-                      category: _categories[index],
-                      onUpload: () => _uploadToCategory(_categories[index]),
-                      onDeleteFile: (file) =>
-                          _removeFile(_categories[index], file),
-                    );
-                  },
-                ),
-                if (_isUploading)
-                  Container(
-                    color: Colors.black.withOpacity(0.15),
-                    child: const Center(
-                      child: Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(20),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                ),
-                              ),
-                              SizedBox(width: 14),
-                              Text("Uploading..."),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+      body: ListView.separated(
+        padding: const EdgeInsets.all(20),
+        itemCount: _categories.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 14),
+        itemBuilder: (context, index) {
+          final category = _categories[index];
+
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4)),
               ],
             ),
-    );
-  }
-}
-
-class _CategoryCard extends StatelessWidget {
-  final _MaterialCategory category;
-  final VoidCallback onUpload;
-  final void Function(_UploadedFile file) onDeleteFile;
-
-  const _CategoryCard({
-    required this.category,
-    required this.onUpload,
-    required this.onDeleteFile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1B1F3B).withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  category.icon,
-                  color: const Color(0xFF1B1F3B),
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  category.title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: onUpload,
-                icon: const Icon(Icons.upload_rounded, size: 18),
-                label: const Text("Upload"),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF1B1F3B),
-                ),
-              ),
-            ],
-          ),
-          if (category.files.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, left: 4),
-              child: Text(
-                "No files uploaded yet",
-                style: TextStyle(fontSize: 12.5, color: Colors.grey.shade500),
-              ),
-            )
-          else ...[
-            const SizedBox(height: 10),
-            const Divider(height: 1),
-            ...category.files.map(
-              (file) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    const Icon(
-                      Icons.insert_drive_file_rounded,
-                      size: 18,
-                      color: Colors.black45,
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1B1F3B).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(category["icon"], color: const Color(0xFF1B1F3B), size: 20),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        file.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Colors.black87,
-                        ),
+                        category["title"],
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                       ),
                     ),
-                    Text(
-                      file.sizeLabel,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: Colors.grey.shade500,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        size: 18,
-                        color: Colors.redAccent,
-                      ),
-                      onPressed: () => onDeleteFile(file),
-                      splashRadius: 18,
+                    TextButton.icon(
+                      onPressed: () => _showAddMaterialSheet(category["title"]),
+                      icon: const Icon(Icons.add_link_rounded, size: 18),
+                      label: const Text("Add"),
+                      style: TextButton.styleFrom(foregroundColor: const Color(0xFF1B1F3B)),
                     ),
                   ],
                 ),
-              ),
+                StreamBuilder<QuerySnapshot>(
+                  stream: materialsRef
+                      .where('semester', isEqualTo: widget.semester)
+                      .where('category', isEqualTo: category["title"])
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const Padding(
+                        padding: EdgeInsets.only(top: 10),
+                        child: LinearProgressIndicator(minHeight: 2),
+                      );
+                    }
+
+                    final docs = snapshot.data!.docs;
+
+                    if (docs.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8, left: 4),
+                        child: Text(
+                          "No materials added yet",
+                          style: TextStyle(fontSize: 12.5, color: Colors.grey.shade500),
+                        ),
+                      );
+                    }
+
+                    return Column(
+                      children: [
+                        const SizedBox(height: 10),
+                        const Divider(height: 1),
+                        ...docs.map((doc) {
+                          final data = doc.data() as Map<String, dynamic>;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.link_rounded, size: 18, color: Colors.black45),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => _openLink(data['driveLink'] ?? ''),
+                                    child: Text(
+                                      data['title'] ?? '',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        color: Color(0xFF1B1F3B),
+                                        fontWeight: FontWeight.w600,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close_rounded, size: 18, color: Colors.redAccent),
+                                  onPressed: () => _deleteMaterial(doc.id),
+                                  splashRadius: 18,
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    );
+                  },
+                ),
+              ],
             ),
-          ],
-        ],
+          );
+        },
       ),
     );
   }
