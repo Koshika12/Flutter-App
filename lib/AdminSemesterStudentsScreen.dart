@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'student_repository.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AdminSemesterStudentsScreen extends StatelessWidget {
   final int semester;
@@ -16,9 +16,11 @@ class AdminSemesterStudentsScreen extends StatelessWidget {
 
   Future<void> _showUpdateSemesterDialog(
     BuildContext context,
-    Student student,
+    String studentId,
+    String studentName,
+    int currentSemester,
   ) async {
-    int selectedSemester = student.semester;
+    int selectedSemester = currentSemester;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -26,7 +28,7 @@ class AdminSemesterStudentsScreen extends StatelessWidget {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text("Move ${student.name}"),
+              title: Text("Move $studentName"),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,21 +75,30 @@ class AdminSemesterStudentsScreen extends StatelessWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      final movedFromSemester = student.semester;
-      StudentRepository.instance.updateStudentSemester(
-        student.id,
-        selectedSemester,
-      );
+      try {
+        await FirebaseFirestore.instance
+            .collection('students')
+            .doc(studentId)
+            .update({'semester': selectedSemester});
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            selectedSemester == movedFromSemester
-                ? "${student.name} is already in Semester $selectedSemester"
-                : "${student.name} moved to Semester $selectedSemester",
-          ),
-        ),
-      );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                selectedSemester == currentSemester
+                    ? "$studentName is already in Semester $selectedSemester"
+                    : "$studentName moved to Semester $selectedSemester",
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Failed to update. Try again.")),
+          );
+        }
+      }
     }
   }
 
@@ -100,13 +111,25 @@ class AdminSemesterStudentsScreen extends StatelessWidget {
         backgroundColor: const Color(0xFF1B1F3B),
         foregroundColor: Colors.white,
       ),
-      body: ValueListenableBuilder<List<Student>>(
-        valueListenable: StudentRepository.instance.studentsNotifier,
-        builder: (context, _, __) {
-          final students =
-              StudentRepository.instance.studentsBySemester(semester);
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('students')
+            .where('semester', isEqualTo: semester)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(
+              child: Text("Something went wrong loading students."),
+            );
+          }
 
-          if (students.isEmpty) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final docs = snapshot.data!.docs;
+
+          if (docs.isEmpty) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
@@ -121,10 +144,18 @@ class AdminSemesterStudentsScreen extends StatelessWidget {
 
           return ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: students.length,
+            itemCount: docs.length,
             separatorBuilder: (_, __) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
-              final student = students[index];
+              final doc = docs[index];
+              final data = doc.data() as Map<String, dynamic>;
+
+              final name = data['name'] ?? '';
+              final email = data['email'] ?? '';
+              final sem = (data['semester'] as num?)?.toInt() ?? semester;
+              final joinedTimestamp = data['joinedDate'] as Timestamp?;
+              final joinedDate = joinedTimestamp?.toDate() ?? DateTime.now();
+
               return Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -141,12 +172,9 @@ class AdminSemesterStudentsScreen extends StatelessWidget {
                 child: Row(
                   children: [
                     CircleAvatar(
-                      backgroundColor:
-                          const Color(0xFF1B1F3B).withOpacity(0.1),
+                      backgroundColor: const Color(0xFF1B1F3B).withOpacity(0.1),
                       child: Text(
-                        student.name.isNotEmpty
-                            ? student.name[0].toUpperCase()
-                            : "?",
+                        name.isNotEmpty ? name[0].toUpperCase() : "?",
                         style: const TextStyle(
                           color: Color(0xFF1B1F3B),
                           fontWeight: FontWeight.bold,
@@ -159,7 +187,7 @@ class AdminSemesterStudentsScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            student.name,
+                            name,
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 15,
@@ -167,26 +195,19 @@ class AdminSemesterStudentsScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            student.email,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.black54,
-                            ),
+                            email,
+                            style: const TextStyle(fontSize: 12, color: Colors.black54),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            "Joined: ${_formatDate(student.joinedDate)}",
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.black54,
-                            ),
+                            "Joined: ${_formatDate(joinedDate)}",
+                            style: const TextStyle(fontSize: 12, color: Colors.black54),
                           ),
                         ],
                       ),
                     ),
                     ElevatedButton(
-                      onPressed: () =>
-                          _showUpdateSemesterDialog(context, student),
+                      onPressed: () => _showUpdateSemesterDialog(context, doc.id, name, sem),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF1B1F3B),
                         foregroundColor: Colors.white,
