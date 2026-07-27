@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'student_repository.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 
 class AdminStudentAccountsScreen extends StatefulWidget {
@@ -31,33 +31,41 @@ class _AdminStudentAccountsScreenState
     return "${months[date.month - 1]} ${date.year}";
   }
 
-  List<Student> _filteredStudents(List<Student> all) {
+  List<QueryDocumentSnapshot> _filteredStudents(List<QueryDocumentSnapshot> all) {
     var list = all;
 
     if (_semesterFilter != null) {
-      list = list.where((s) => s.semester == _semesterFilter).toList();
+      list = list.where((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return (data['semester'] as num?)?.toInt() == _semesterFilter;
+      }).toList();
     }
 
     if (_searchQuery.trim().isNotEmpty) {
       final q = _searchQuery.trim().toLowerCase();
-      list = list
-          .where((s) =>
-              s.name.toLowerCase().contains(q) ||
-              s.email.toLowerCase().contains(q))
-          .toList();
+      list = list.where((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        final name = (data['name'] ?? '').toString().toLowerCase();
+        final email = (data['email'] ?? '').toString().toLowerCase();
+        return name.contains(q) || email.contains(q);
+      }).toList();
     }
 
     list = [...list]
       ..sort((a, b) {
-        final semCompare = a.semester.compareTo(b.semester);
+        final dataA = a.data() as Map<String, dynamic>;
+        final dataB = b.data() as Map<String, dynamic>;
+        final semA = (dataA['semester'] as num?)?.toInt() ?? 0;
+        final semB = (dataB['semester'] as num?)?.toInt() ?? 0;
+        final semCompare = semA.compareTo(semB);
         if (semCompare != 0) return semCompare;
-        return a.joinedDate.compareTo(b.joinedDate);
+        final joinedA = (dataA['joinedDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+        final joinedB = (dataB['joinedDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+        return joinedA.compareTo(joinedB);
       });
 
     return list;
   }
-
- 
 
   @override
   Widget build(BuildContext context) {
@@ -68,11 +76,20 @@ class _AdminStudentAccountsScreenState
         backgroundColor: const Color(0xFF1B1F3B),
         foregroundColor: Colors.white,
       ),
-      body: ValueListenableBuilder<List<Student>>(
-        valueListenable: StudentRepository.instance.studentsNotifier,
-        builder: (context, allStudents, __) {
-          final students = _filteredStudents(allStudents);
-          final semesters = allStudents.map((s) => s.semester).toSet().toList()
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('students').snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final allDocs = snapshot.data!.docs;
+          final students = _filteredStudents(allDocs);
+
+          final semesters = allDocs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return (data['semester'] as num?)?.toInt() ?? 0;
+          }).toSet().toList()
             ..sort();
 
           return Column(
@@ -114,8 +131,7 @@ class _AdminStudentAccountsScreenState
                           child: _FilterChip(
                             label: "Sem $sem",
                             selected: _semesterFilter == sem,
-                            onTap: () =>
-                                setState(() => _semesterFilter = sem),
+                            onTap: () => setState(() => _semesterFilter = sem),
                           ),
                         ),
                       ),
@@ -130,20 +146,24 @@ class _AdminStudentAccountsScreenState
                           padding: EdgeInsets.all(24),
                           child: Text(
                             "No students found.",
-                            style: TextStyle(
-                              color: Colors.black54,
-                              fontSize: 15,
-                            ),
+                            style: TextStyle(color: Colors.black54, fontSize: 15),
                           ),
                         ),
                       )
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                         itemCount: students.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 12),
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
-                          final student = students[index];
+                          final doc = students[index];
+                          final data = doc.data() as Map<String, dynamic>;
+
+                          final name = data['name'] ?? '';
+                          final email = data['email'] ?? '';
+                          final semester = (data['semester'] as num?)?.toInt() ?? 0;
+                          final joinedTimestamp = data['joinedDate'] as Timestamp?;
+                          final joinedDate = joinedTimestamp?.toDate() ?? DateTime.now();
+
                           return Container(
                             padding: const EdgeInsets.all(14),
                             decoration: BoxDecoration(
@@ -163,9 +183,7 @@ class _AdminStudentAccountsScreenState
                                   backgroundColor:
                                       const Color(0xFF1B1F3B).withOpacity(0.1),
                                   child: Text(
-                                    student.name.isNotEmpty
-                                        ? student.name[0].toUpperCase()
-                                        : "?",
+                                    name.isNotEmpty ? name[0].toUpperCase() : "?",
                                     style: const TextStyle(
                                       color: Color(0xFF1B1F3B),
                                       fontWeight: FontWeight.bold,
@@ -175,11 +193,10 @@ class _AdminStudentAccountsScreenState
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        student.name,
+                                        name,
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w600,
                                           fontSize: 15,
@@ -187,69 +204,41 @@ class _AdminStudentAccountsScreenState
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-  "Email: ${student.email}",
-  style: const TextStyle(
-    fontSize: 12,
-    color: Colors.black54,
-  ),
-),
-
-const SizedBox(height: 4),
-
-Text(
-  "Password: ${student.password}",
-  style: const TextStyle(
-    fontSize: 12,
-    color: Colors.black54,
-    fontWeight: FontWeight.w500,
-  ),
-),
-
-const SizedBox(height: 4),
-
-Text(
-  "Semester ${student.semester} • Joined: ${_formatDate(student.joinedDate)}",
-  style: const TextStyle(
-    fontSize: 12,
-    color: Colors.black54,
-  ),
-),
+                                        "Email: $email",
+                                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        "Semester $semester • Joined: ${_formatDate(joinedDate)}",
+                                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                      ),
                                     ],
                                   ),
                                 ),
                                 ElevatedButton.icon(
-  onPressed: () async {
-    final accountDetails = '''
-Name: ${student.name}
-Email: ${student.email}
-Password: ${student.password}
-Semester: ${student.semester}
+                                  onPressed: () async {
+                                    final accountDetails = '''
+Name: $name
+Email: $email
+Semester: $semester
 ''';
-
-    await Clipboard.setData(
-      ClipboardData(text: accountDetails),
-    );
-
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "${student.name}'s account copied!",
-          ),
-        ),
-      );
-    }
-  },
-  icon: const Icon(Icons.copy),
-  label: const Text("Copy"),
-  style: ElevatedButton.styleFrom(
-    backgroundColor: const Color(0xFF1B1F3B),
-    foregroundColor: Colors.white,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(10),
-    ),
-  ),
-),
+                                    await Clipboard.setData(ClipboardData(text: accountDetails));
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text("$name's details copied!")),
+                                      );
+                                    }
+                                  },
+                                  icon: const Icon(Icons.copy),
+                                  label: const Text("Copy"),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF1B1F3B),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           );
@@ -286,9 +275,7 @@ class _FilterChip extends StatelessWidget {
           color: selected ? const Color(0xFF1B1F3B) : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected
-                ? const Color(0xFF1B1F3B)
-                : Colors.grey.shade300,
+            color: selected ? const Color(0xFF1B1F3B) : Colors.grey.shade300,
           ),
         ),
         alignment: Alignment.center,
