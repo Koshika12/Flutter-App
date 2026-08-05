@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'HomeAdmin.dart';
-
-enum AttendanceStatus { present, absent, unmarked }
+import 'attendance_repository.dart';
 
 class _StudentAttendance {
   final String name;
@@ -28,7 +26,8 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
 
   final List<String> semesters = List.generate(8, (i) => "${i + 1}");
 
-  // Mock student list — replace with real data per semester later
+  // Mock student roster — replace with real data per semester later
+  // (e.g. from StudentRepository, filtered by semester).
   final Map<int, List<_StudentAttendance>> _studentsBySemester = {
     5: [
       _StudentAttendance(name: "Unish Rajak", rollNo: "BCA-5-01"),
@@ -46,6 +45,23 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
   List<_StudentAttendance> get _currentStudents =>
       _studentsBySemester[selectedSemester] ?? [];
 
+  @override
+  void initState() {
+    super.initState();
+    _applySavedStatuses();
+  }
+
+  /// Pulls any previously-saved statuses for the current semester + date
+  /// out of the shared repository and applies them to the roster, so
+  /// re-opening a date you already marked shows what you saved before.
+  void _applySavedStatuses() {
+    final saved = AttendanceRepository.instance
+        .getAttendance(selectedSemester, selectedDate);
+    for (final s in _currentStudents) {
+      s.status = saved?[s.rollNo] ?? AttendanceStatus.unmarked;
+    }
+  }
+
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -54,7 +70,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
       lastDate: DateTime(2030),
     );
     if (picked != null) {
-      setState(() => selectedDate = picked);
+      setState(() {
+        selectedDate = picked;
+        _applySavedStatuses();
+      });
     }
   }
 
@@ -71,6 +90,13 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
         .where((s) => s.status == AttendanceStatus.unmarked)
         .length;
 
+    // Write into the shared repository so the Student side can see it.
+    AttendanceRepository.instance.saveAttendance(
+      selectedSemester,
+      selectedDate,
+      {for (final s in _currentStudents) s.rollNo: s.status},
+    );
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -80,13 +106,22 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
         ),
       ),
     );
-    // TODO: persist to backend once wired up
   }
 
   String get _formattedDate {
     const months = [
-      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
     ];
     return "${selectedDate.day.toString().padLeft(2, '0')} "
         "${months[selectedDate.month - 1]} ${selectedDate.year}";
@@ -104,7 +139,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
       backgroundColor: const Color(0xFFF5F7FB),
       appBar: AppBar(
         title: const Text("Mark Attendance"),
-       backgroundColor: const Color(0xFF1B1F3B),
+        backgroundColor: const Color(0xFF2142B2),
         foregroundColor: Colors.white,
       ),
       body: Column(
@@ -122,7 +157,10 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                         value: selectedSemester.toString(),
                         items: semesters,
                         onChanged: (v) {
-                          setState(() => selectedSemester = int.parse(v!));
+                          setState(() {
+                            selectedSemester = int.parse(v!);
+                            _applySavedStatuses();
+                          });
                         },
                       ),
                     ),
@@ -152,12 +190,13 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                 border: Border.all(color: Colors.grey.shade300),
                               ),
                               child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(_formattedDate,
                                       style: const TextStyle(fontSize: 14)),
                                   const Icon(Icons.calendar_today_rounded,
-                                      size: 16, color: Color(0xFF1B1F3B)),
+                                      size: 16, color: Color(0xFF2142B2)),
                                 ],
                               ),
                             ),
@@ -190,7 +229,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                       child: _SummaryChip(
                         label: "Total",
                         count: students.length,
-                        color: const Color(0xFF1B1F3B),
+                        color: const Color(0xFF2142B2),
                       ),
                     ),
                   ],
@@ -256,12 +295,12 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                           children: [
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: const Color(0xFF1B1F3B)
-                                  .withOpacity(0.1),
+                              backgroundColor:
+                                  const Color(0xFF2142B2).withOpacity(0.1),
                               child: Text(
                                 s.name.isNotEmpty ? s.name[0] : "?",
                                 style: const TextStyle(
-                                  color: Color(0xFF1B1F3B),
+                                  color: Color(0xFF2142B2),
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -312,7 +351,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
             child: ElevatedButton(
               onPressed: students.isEmpty ? null : _saveAttendance,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1B1F3B),
+                backgroundColor: const Color(0xFF2142B2),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),

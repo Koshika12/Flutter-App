@@ -53,39 +53,39 @@ class WelcomeScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     const SizedBox(height: 20),
-
-                    Image.asset(
-                      "assets/logos/education.png",
-                      height: size.height * 0.30,
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2142B2).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Image.asset(
+                        "assets/logos/education.png",
+                        height: size.height * 0.24,
+                      ),
                     ),
-
                     const SizedBox(height: 30),
-
                     const Text(
                       "Welcome to\nBCA Student Portal",
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 32,
+                        fontSize: 30,
                         fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+                        color: Color(0xFF173A8A),
                         height: 1.2,
                       ),
                     ),
-
                     const SizedBox(height: 20),
-
                     const Text(
-                      "Your all-in-one platform to access notices, class routines, assignments, study materials and academic information anytime.",
+                      "Access notices, class routines, assignments, study materials and academic updates in one place.",
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
                         color: Colors.black54,
                         height: 1.6,
                       ),
                     ),
-
                     const SizedBox(height: 45),
-
                     SizedBox(
                       width: double.infinity,
                       height: 58,
@@ -94,7 +94,7 @@ class WelcomeScreen extends StatelessWidget {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF2142B2),
                           foregroundColor: Colors.white,
-                          elevation: 5,
+                          elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(18),
                           ),
@@ -102,13 +102,12 @@ class WelcomeScreen extends StatelessWidget {
                         child: const Text(
                           "Get Started",
                           style: TextStyle(
-                            fontSize: 20,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 15),
                   ],
                 ),

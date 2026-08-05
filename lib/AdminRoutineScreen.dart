@@ -1,11 +1,25 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'HomeAdmin.dart';
 
 class AdminRoutineScreen extends StatefulWidget {
   const AdminRoutineScreen({super.key});
 
   @override
   State<AdminRoutineScreen> createState() => _AdminRoutineScreenState();
+}
+
+class _ClassEntry {
+  String subject;
+  String teacher;
+  String startTime;
+  String endTime;
+
+  _ClassEntry({
+    required this.subject,
+    required this.teacher,
+    required this.startTime,
+    required this.endTime,
+  });
 }
 
 class _AdminRoutineScreenState extends State<AdminRoutineScreen> {
@@ -18,16 +32,20 @@ class _AdminRoutineScreenState extends State<AdminRoutineScreen> {
     "Friday", "Saturday", "Sunday",
   ];
 
-  final CollectionReference routinesRef =
-      FirebaseFirestore.instance.collection('routines');
+  // Local mock storage: semester -> weekday -> list of classes
+  final Map<int, Map<String, List<_ClassEntry>>> _routineStore = {};
 
-  void _addOrEditClass({DocumentSnapshot? existing}) {
-    final data = existing?.data() as Map<String, dynamic>?;
+  List<_ClassEntry> get _currentClasses {
+    _routineStore.putIfAbsent(selectedSemester, () => {});
+    _routineStore[selectedSemester]!.putIfAbsent(selectedDay, () => []);
+    return _routineStore[selectedSemester]![selectedDay]!;
+  }
 
-    final subjectCtrl = TextEditingController(text: data?['subject'] ?? "");
-    final teacherCtrl = TextEditingController(text: data?['teacher'] ?? "");
-    final startCtrl = TextEditingController(text: data?['startTime'] ?? "");
-    final endCtrl = TextEditingController(text: data?['endTime'] ?? "");
+  void _addOrEditClass({_ClassEntry? existing, int? index}) {
+    final subjectCtrl = TextEditingController(text: existing?.subject ?? "");
+    final teacherCtrl = TextEditingController(text: existing?.teacher ?? "");
+    final startCtrl = TextEditingController(text: existing?.startTime ?? "");
+    final endCtrl = TextEditingController(text: existing?.endTime ?? "");
 
     showModalBottomSheet(
       context: context,
@@ -37,147 +55,122 @@ class _AdminRoutineScreenState extends State<AdminRoutineScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.75,
-          minChildSize: 0.6,
-          maxChildSize: 0.95,
-          builder: (_, scrollController) {
-            return SingleChildScrollView(
-              controller: scrollController,
-              padding: EdgeInsets.only(
-                left: 22,
-                right: 22,
-                top: 22,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 22,
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 22,
+            right: 22,
+            top: 22,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 22,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                existing == null ? "Add Class" : "Edit Class",
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(height: 18),
+              _RoutineTextField(label: "Subject", controller: subjectCtrl),
+              const SizedBox(height: 14),
+              _RoutineTextField(label: "Teacher", controller: teacherCtrl),
+              const SizedBox(height: 14),
+              Row(
                 children: [
-                  Text(
-                    existing == null ? "Add Class" : "Edit Class",
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: _RoutineTextField(
+                      label: "Start time",
+                      controller: startCtrl,
+                      hint: "06:30",
                     ),
                   ),
-                  const SizedBox(height: 18),
-                  _RoutineTextField(label: "Subject", controller: subjectCtrl),
-                  const SizedBox(height: 14),
-                  _RoutineTextField(label: "Teacher", controller: teacherCtrl),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _RoutineTextField(
-                          label: "Start time",
-                          controller: startCtrl,
-                          hint: "06:30",
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _RoutineTextField(
-                          label: "End time",
-                          controller: endCtrl,
-                          hint: "07:20",
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 22),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1B1F3B),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      onPressed: () async {
-                        final subject = subjectCtrl.text.trim();
-                        final teacher = teacherCtrl.text.trim();
-                        final start = startCtrl.text.trim();
-                        final end = endCtrl.text.trim();
-
-                        if (subject.isEmpty || start.isEmpty || end.isEmpty) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("Please fill subject, start and end time"),
-                            ),
-                          );
-                          return;
-                        }
-
-                        final classData = {
-                          'semester': selectedSemester,
-                          'day': selectedDay,
-                          'subject': subject,
-                          'teacher': teacher,
-                          'startTime': start,
-                          'endTime': end,
-                        };
-
-                        try {
-                          if (existing == null) {
-                            await routinesRef.add(classData);
-                          } else {
-                            await routinesRef.doc(existing.id).update(classData);
-                          }
-                          if (ctx.mounted) Navigator.pop(ctx);
-                        } catch (e) {
-                          if (ctx.mounted) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(content: Text("Failed to save. Try again.")),
-                            );
-                          }
-                        }
-                      },
-                      child: Text(
-                        existing == null ? "Add Class" : "Save Changes",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _RoutineTextField(
+                      label: "End time",
+                      controller: endCtrl,
+                      hint: "07:20",
                     ),
                   ),
                 ],
               ),
-            );
-          },
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2142B2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () {
+                    if (subjectCtrl.text.trim().isEmpty ||
+                        startCtrl.text.trim().isEmpty ||
+                        endCtrl.text.trim().isEmpty) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text("Please fill all required fields")),
+                      );
+                      return;
+                    }
+
+                    setState(() {
+                      if (existing != null && index != null) {
+                        _currentClasses[index] = _ClassEntry(
+                          subject: subjectCtrl.text.trim(),
+                          teacher: teacherCtrl.text.trim(),
+                          startTime: startCtrl.text.trim(),
+                          endTime: endCtrl.text.trim(),
+                        );
+                      } else {
+                        _currentClasses.add(_ClassEntry(
+                          subject: subjectCtrl.text.trim(),
+                          teacher: teacherCtrl.text.trim(),
+                          startTime: startCtrl.text.trim(),
+                          endTime: endCtrl.text.trim(),
+                        ));
+                      }
+                    });
+
+                    Navigator.pop(ctx);
+                  },
+                  child: Text(
+                    existing == null ? "Add Class" : "Save Changes",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
   }
 
-  Future<void> _deleteClass(String docId) async {
-    try {
-      await routinesRef.doc(docId).delete();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to delete. Try again.")),
-        );
-      }
-    }
+  void _deleteClass(int index) {
+    setState(() {
+      _currentClasses.removeAt(index);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final classes = _currentClasses;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FB),
       appBar: AppBar(
         title: const Text("Manage Routine"),
-        backgroundColor: const Color(0xFF1B1F3B),
+        backgroundColor: const Color(0xFF2142B2),
         foregroundColor: Colors.white,
       ),
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF1B1F3B),
+        backgroundColor: const Color(0xFF2142B2),
         onPressed: () => _addOrEditClass(),
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text("Add Class", style: TextStyle(color: Colors.white)),
@@ -187,126 +180,104 @@ class _AdminRoutineScreenState extends State<AdminRoutineScreen> {
           Container(
             color: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: _DropdownField(
-                    label: "Semester",
-                    value: selectedSemester.toString(),
-                    items: semesters,
-                    onChanged: (v) {
-                      setState(() => selectedSemester = int.parse(v!));
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _DropdownField(
-                    label: "Weekday",
-                    value: selectedDay,
-                    items: weekdays,
-                    onChanged: (v) {
-                      setState(() => selectedDay = v!);
-                    },
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DropdownField(
+                        label: "Semester",
+                        value: selectedSemester.toString(),
+                        items: semesters,
+                        onChanged: (v) {
+                          setState(() => selectedSemester = int.parse(v!));
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _DropdownField(
+                        label: "Weekday",
+                        value: selectedDay,
+                        items: weekdays,
+                        onChanged: (v) {
+                          setState(() => selectedDay = v!);
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: routinesRef
-                  .where('semester', isEqualTo: selectedSemester)
-                  .where('day', isEqualTo: selectedDay)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      "Something went wrong loading classes.",
-                      style: TextStyle(color: Colors.grey.shade600),
-                    ),
-                  );
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final docs = snapshot.data?.docs ?? [];
-
-                if (docs.isEmpty) {
-                  return Center(
+            child: classes.isEmpty
+                ? Center(
                     child: Text(
                       "No classes added for\nSemester $selectedSemester, $selectedDay",
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
                     ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final data = doc.data() as Map<String, dynamic>;
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  data['subject'] ?? '',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+                    itemCount: classes.length,
+                    itemBuilder: (context, index) {
+                      final c = classes[index];
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    c.subject,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  data['teacher'] ?? '',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.grey.shade600,
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    c.teacher,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey.shade600,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  "${data['startTime']} - ${data['endTime']}",
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    "${c.startTime} - ${c.endTime}",
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF2142B2),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.edit_outlined, color: Colors.grey),
-                            onPressed: () => _addOrEditClass(existing: doc),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                            onPressed: () => _deleteClass(doc.id),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, color: Colors.grey),
+                              onPressed: () => _addOrEditClass(existing: c, index: index),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                              onPressed: () => _deleteClass(index),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -402,7 +373,7 @@ class _RoutineTextField extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF1B1F3B), width: 2),
+              borderSide: const BorderSide(color: Color(0xFF2142B2), width: 2),
             ),
           ),
         ),

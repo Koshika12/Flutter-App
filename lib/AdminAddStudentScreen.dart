@@ -2,9 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'student_repository.dart';
 
 class AdminAddStudentScreen extends StatefulWidget {
   const AdminAddStudentScreen({super.key});
@@ -56,6 +55,7 @@ class _AdminAddStudentScreenState extends State<AdminAddStudentScreen> {
   void _onNameChanged() {
     if (_emailManuallyEdited) return;
     final generated = _generateEmail(_nameCtrl.text);
+    // Update without re-triggering the manual-edit listener.
     _emailCtrl.removeListener(_onEmailFieldEdited);
     _emailCtrl.text = generated;
     _emailCtrl.addListener(_onEmailFieldEdited);
@@ -63,6 +63,7 @@ class _AdminAddStudentScreenState extends State<AdminAddStudentScreen> {
   }
 
   void _onEmailFieldEdited() {
+    // Any direct edit to the email field means we stop auto-updating it.
     _emailManuallyEdited = true;
   }
 
@@ -77,7 +78,7 @@ class _AdminAddStudentScreenState extends State<AdminAddStudentScreen> {
 
     if (slug.isEmpty) return "";
 
-    final suffix = 100 + _rand.nextInt(900);
+    final suffix = 100 + _rand.nextInt(900); // 3-digit disambiguator
     return "$slug$suffix@$_emailDomain";
   }
 
@@ -170,64 +171,44 @@ class _AdminAddStudentScreenState extends State<AdminAddStudentScreen> {
     final semester = _selectedSemester;
     final joinedDate = _joinedDate!;
 
-    try {
-      // Use a secondary, temporary Firebase app so creating this new
-      // account doesn't sign the admin out of their own session.
-      FirebaseApp secondaryApp;
-      try {
-        secondaryApp = Firebase.app('AddStudentApp');
-      } catch (e) {
-        secondaryApp = await Firebase.initializeApp(
-          name: 'AddStudentApp',
-          options: Firebase.app().options,
-        );
-      }
+    // TODO: Replace with real calls to your backend:
+    // 1. Create the login account (e.g. Firebase Auth
+    //    createUserWithEmailAndPassword, or your own auth API) using
+    //    `email` and `password`, tagged with role "student".
+    //    NOTE: if the generated email happens to collide with an
+    //    existing account, catch that error here and regenerate.
+    // 2. Create the student record (name, semester, email, joinedDate)
+    //    linked to that account, e.g.:
+    //    await studentRepository.addStudent(
+    //      name: name,
+    //      semester: semester,
+    //      email: email,
+    //      joinedDate: joinedDate,
+    //      uid: createdAuthUser.uid,
+    //    );
+    await Future.delayed(const Duration(seconds: 1));
 
-      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
-
-      final credential = await secondaryAuth.createUserWithEmailAndPassword(
+    // Save locally so it shows up immediately in semester counts and the
+    // Student Accounts screen. Swap/extend this once real backend calls
+    // (auth account creation + student record) are wired in above.
+    StudentRepository.instance.addStudent(
+      Student(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        name: name,
+        semester: semester,
         email: email,
         password: password,
-      );
+        joinedDate: joinedDate,
+      ),
+    );
 
-      await FirebaseFirestore.instance
-          .collection('students')
-          .doc(credential.user!.uid)
-          .set({
-        'name': name,
-        'semester': semester,
-        'email': email,
-        'joinedDate': Timestamp.fromDate(joinedDate),
-      });
+    if (!mounted) return;
+    setState(() => _isSaving = false);
 
-      await secondaryAuth.signOut();
+    await _showCredentialsDialog(name: name, email: email, password: password);
 
-      if (!mounted) return;
-      setState(() => _isSaving = false);
-
-      await _showCredentialsDialog(name: name, email: email, password: password);
-
-      if (!mounted) return;
-      Navigator.pop(context);
-    } on FirebaseAuthException catch (e) {
-      setState(() => _isSaving = false);
-      String message = "Failed to create account. Please try again.";
-      if (e.code == 'email-already-in-use') {
-        message = "That email is already in use — try regenerating it.";
-      } else if (e.code == 'weak-password') {
-        message = "Password is too weak — try regenerating it.";
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-      }
-    } catch (e) {
-      setState(() => _isSaving = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Something went wrong. Please try again.")),
-        );
-      }
-    }
+    if (!mounted) return;
+    Navigator.pop(context);
   }
 
   Future<void> _showCredentialsDialog({

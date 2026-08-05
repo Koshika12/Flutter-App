@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'AdminRoutineScreen.dart';
 import 'AdminAttendanceScreen.dart';
@@ -10,7 +9,7 @@ import 'AdminStudyMaterialsScreen.dart';
 import 'AdminNoticeScreen.dart';
 import 'AdminAddStudentScreen.dart';
 import 'AdminStudentAccountsScreen.dart';
-import 'AdminSemesterStudentsScreen.dart';
+import 'student_repository.dart';
 
 class HomeAdmin extends StatefulWidget {
   const HomeAdmin({super.key});
@@ -20,7 +19,34 @@ class HomeAdmin extends StatefulWidget {
 }
 
 class _HomeAdminState extends State<HomeAdmin> {
-  int _selectedNavIndex = 0;
+  int _selectedNavIndex = 0; // Home tab active by default
+
+  // TODO: Replace this with a real call to your backend
+  // (e.g. Firestore query counting students where semester == X,
+  // or a REST endpoint like GET /admin/semesters/summary). This
+  // represents students that already existed before this app's
+  // "Add Student" flow — newly added students are merged in live
+  // from StudentRepository at render time (see _mergedSemesterCounts).
+  Map<int, int> _baseSemesterCounts() {
+    return {
+      1: 42,
+      2: 38,
+      3: 45,
+      4: 40,
+      5: 37,
+      6: 33,
+      7: 29,
+      8: 25,
+    };
+  }
+
+  Map<int, int> _mergedSemesterCounts() {
+    final merged = {..._baseSemesterCounts()};
+    StudentRepository.instance.countsBySemester().forEach((sem, count) {
+      merged[sem] = (merged[sem] ?? 0) + count;
+    });
+    return merged;
+  }
 
   Future<void> _logout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
@@ -40,18 +66,19 @@ class _HomeAdminState extends State<HomeAdmin> {
     if (index == _selectedNavIndex) return;
 
     switch (index) {
-      case 0:
+      case 0: // Home (this screen) — no navigation needed
         setState(() => _selectedNavIndex = index);
         break;
-      case 1:
+      case 1: // Routine
         setState(() => _selectedNavIndex = index);
         await Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const AdminRoutineScreen()),
         );
+        // Returned via back button — reset nav bar back to Home.
         if (mounted) setState(() => _selectedNavIndex = 0);
         break;
-      case 2:
+      case 2: // Study Materials
         setState(() => _selectedNavIndex = index);
         await Navigator.push(
           context,
@@ -59,7 +86,7 @@ class _HomeAdminState extends State<HomeAdmin> {
         );
         if (mounted) setState(() => _selectedNavIndex = 0);
         break;
-      case 3:
+      case 3: // Attendance
         setState(() => _selectedNavIndex = index);
         await Navigator.push(
           context,
@@ -173,38 +200,13 @@ class _HomeAdminState extends State<HomeAdmin> {
                 ),
               ),
               const SizedBox(height: 14),
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance.collection('students').snapshots(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: CircularProgressIndicator(),
-                      ),
-                    );
-                  }
-
-                  final docs = snapshot.data!.docs;
-                  final counts = <int, int>{};
-                  for (final doc in docs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final sem = (data['semester'] as num?)?.toInt() ?? 0;
-                    if (sem > 0) counts[sem] = (counts[sem] ?? 0) + 1;
-                  }
-
+              ValueListenableBuilder<List<Student>>(
+                valueListenable: StudentRepository.instance.studentsNotifier,
+                builder: (context, _, __) {
+                  final counts = _mergedSemesterCounts();
                   final semesters = counts.keys.toList()..sort();
-                  final totalStudents = counts.values.fold<int>(0, (sum, c) => sum + c);
-
-                  if (semesters.isEmpty) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Text(
-                        "No students added yet.",
-                        style: TextStyle(color: Colors.black54),
-                      ),
-                    );
-                  }
+                  final totalStudents =
+                      counts.values.fold<int>(0, (sum, c) => sum + c);
 
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -229,8 +231,9 @@ class _HomeAdminState extends State<HomeAdmin> {
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    AdminSemesterStudentsScreen(semester: sem),
+                                builder: (_) => AdminStudentAccountsScreen(
+                                  initialSemesterFilter: sem,
+                                ),
                               ),
                             ),
                           );
